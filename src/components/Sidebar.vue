@@ -10,7 +10,7 @@
     >
       <div class="side-bar">
         <div class="title-area">
-          <BInput placeholder="맛집 이름을 입력해주세요."/>
+          <BInput v-model="title" placeholder="맛집 이름을 입력해주세요."/>
         </div>
         <div class="image-area">
           <div class="iw-file-input">
@@ -21,13 +21,19 @@
           <BInput placeholder="위치 정보 직접 입력하기" v-model="address"/>
         </div>
         <div class="rate-area">
-          <BFormRating />
+          <BFormRating v-model="grade"/>
         </div>
         <div class="review-area">
           <BFormTextarea
               ref="textarea"
               placeholder="후기를 입력해주세요."
+              v-model="review"
           />
+        </div>
+        <div class="bottom-btn-area">
+          <BButton class="save-btn" @click="saveReview">
+              저장
+          </BButton>
         </div>
       </div>
     </VueResizable>
@@ -43,6 +49,7 @@
 
 <script>
 import VueResizable from 'vue-resizable';
+import axios from 'axios';
 
 export default {
   name: 'SideBar',
@@ -52,18 +59,28 @@ export default {
   data() {
     return {
       isVisibleSideBar: true,
+      title: undefined,
       address: undefined,
-
+      grade: undefined,
+      review: undefined
     }
   },
   created() {
     this.$root.$refs.sideBar = this;
   },
   methods: {
+    saveReview() {
+      axios.post('/api/review/saveReview', {
+        title: this.title,
+        address: this.address,
+        grade: this.grade,
+        review: this.review
+      })
+    },
     showSideBar() {
       this.isVisibleSideBar = !this.isVisibleSideBar;
-    }
-  }
+    },        
+  },
 }
 </script>
 
