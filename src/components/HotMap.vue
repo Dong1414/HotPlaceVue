@@ -63,6 +63,7 @@ mounted() {
         const lat = lonLatArr[1]
         const addressInfo = await that.getAddress(lon, lat)
         that.setUiAddress(addressInfo.data.display_name);
+        that.setLonLat(lon, lat);
     }
 
     function drawMapIcon() {
@@ -79,9 +80,8 @@ mounted() {
         }))
         vectorSource.addFeature(feature);    
     }
-  })
-    
-const geocoder = new Geocoder('nominatim', {
+  })  
+  const geocoder = new Geocoder('nominatim', {
       provider: 'osm',
       lang: 'kr',
       placeholder: '주소 검색',
@@ -110,6 +110,10 @@ const geocoder = new Geocoder('nominatim', {
     setUiAddress(str) {
       this.$root.$refs.sideBar.address = str.split(', ').reverse().join(' ');
    },
+    setLonLat(lon, lat) {
+      this.$root.$refs.sideBar.lon = lon;
+      this.$root.$refs.sideBar.lat = lat;
+   },
   }
 }
 </script>
@@ -118,7 +122,7 @@ const geocoder = new Geocoder('nominatim', {
 .main-map {
 width: 100%;
 height: 100%;
-::v-deep.ol-geocoder {
+::v-deep .ol-geocoder {
     position: absolute;
     right: 0;
     padding: 10px;

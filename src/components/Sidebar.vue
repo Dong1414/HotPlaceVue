@@ -10,7 +10,7 @@
     >
       <div class="side-bar">
         <div class="title-area">
-          <BInput v-model="title" placeholder="맛집 이름을 입력해주세요."/>
+          <BInput v-model="title" placeholder="제목을 입력해주세요."/>
         </div>
         <div class="image-area">
           <div class="iw-file-input">
@@ -18,7 +18,7 @@
           </div>
         </div>
         <div class="location-info-area">
-          <BInput placeholder="위치 정보 직접 입력하기" v-model="address"/>
+          <BInput placeholder="위치 정보가 표시됩니다." v-model="address"/>
         </div>
         <div class="rate-area">
           <BFormRating v-model="grade"/>
@@ -31,7 +31,7 @@
           />
         </div>
         <div class="bottom-btn-area">
-          <BButton class="save-btn" @click="saveReview">
+          <BButton class="save-btn" variant="success" @click="saveReview">
               저장
           </BButton>
         </div>
@@ -44,17 +44,20 @@
     >
       {{ isVisibleSideBar ? '닫힘' : '열림' }}
     </BButton>
+    <ProgressSpinner v-if="processingCount > 0" />
   </div>
 </template>
 
 <script>
 import VueResizable from 'vue-resizable';
 import axios from 'axios';
+import ProgressSpinner from '@/components/ProgressSpinner.vue'
 
 export default {
   name: 'SideBar',
   components: {
-    VueResizable
+    VueResizable,
+    ProgressSpinner
   },
   data() {
     return {
@@ -62,34 +65,66 @@ export default {
       title: undefined,
       address: undefined,
       grade: undefined,
-      review: undefined
+      review: undefined,
+      lon: undefined,
+      lat: undefined,
+      processingCount: 0,
     }
   },
   created() {
     this.$root.$refs.sideBar = this;
   },
   methods: {
-    saveReview() {
-      axios.post('/api/review/saveReview', {
-        title: this.title,
-        address: this.address,
-        grade: this.grade,
-        review: this.review
-      })
-    },
     showSideBar() {
       this.isVisibleSideBar = !this.isVisibleSideBar;
-    },        
-  },
+    },
+    async saveReview () {
+      this.processingCount++;
+      try {
+          await axios.post('/api/review/saveReview', {
+              title: this.title,
+              address: this.address,
+              grade: this.grade,
+              review: this.review,
+              lon : this.lon,
+              lat : this.lat,
+          });
+          await this.$bvModal.msgBoxOk('저장 완료되었습니다.', {
+              hideHeader: true,
+              okTitle: '확인',
+              noFade: false,
+              size: 'sm',
+              buttonSize: 'sm',
+              okVariant: 'success',
+              headerClass: 'p-2 border-bottom-0',
+              footerClass: 'p-2 border-top-0',
+          });
+      } catch (e) {
+          console.log(e.message);
+          await this.$bvModal.msgBoxOk(e.message, {
+              hideHeader: true,
+              okTitle: '확인',
+              noFade: false,
+              size: 'sm',
+              buttonSize: 'sm',
+              okVariant: 'danger',
+              headerClass: 'p-2 border-bottom-0',
+              footerClass: 'p-2 border-top-0',
+          });
+          return await Promise.reject(e);
+      } finally {
+          this.processingCount--;
+      }
+    }
+  }
 }
 </script>
 
 <style lang="scss" scoped>
 .side-bar-wrapper {
   display: flex;
-  color: #fff;
-
-  > .resizable-side-bar {
+  color: #fff;  
+  > .resizable-side-bar {    
     > .side-bar {
       background-color: rgba(0, 0, 0, 0.5);
       position: absolute;
@@ -98,7 +133,12 @@ export default {
       right: 0;
       bottom: 0;
       padding: 10px;
-
+      > .bottom-btn-area{
+        text-align: right;
+        > .save-btn{
+          font-weight: bold;
+        }
+    }
       > .title-area {
         padding: 20px 10px;
 
@@ -156,7 +196,7 @@ export default {
         padding: 20px 10px;
 
         textarea, textarea::placeholder {
-          min-height: 300px;
+          min-height: 97px;
           resize: none;
           color: #fff;
           background: none;
