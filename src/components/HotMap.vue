@@ -1,174 +1,284 @@
 <template>
-  <div class="main-map" ref="map"></div>
+  <div class="main-map" ref="map">
+      <div
+          class="overlay-tooltip"
+          ref="overlay"
+          v-show="isShowOverlay"
+      >
+          <div class="overlay-content">
+              {{ selectedOverlayText }}
+              <BFormRating class="rating" v-model="selectedOverlayRating" readonly />
+          </div>
+      </div>
+  </div>
 </template>
 
 <script>
-import Geocoder from 'ol-geocoder';
-import OlLayerTile from 'ol/layer/Tile.js';
-import OlView from 'ol/View.js';
-import OlMap from 'ol/Map.js';
-import OSM from 'ol/source/OSM';
-import {fromLonLat, toLonLat} from 'ol/proj.js';
-import {defaults} from 'ol/control.js';
-import axios from 'axios';
+import axios from 'axios'
+import Geocoder from 'ol-geocoder'
+import OlLayerTile from 'ol/layer/Tile.js'
 import OlVectorSource from 'ol/source/Vector.js'
 import OlVectorLayer from 'ol/layer/Vector.js'
+import OlView from 'ol/View.js'
+import OlMap from 'ol/Map.js'
 import OlFeature from 'ol/Feature.js';
-import OlPoint from 'ol/geom/Point';
+import OlPoint from 'ol/geom/Point.js';
+import OSM from 'ol/source/OSM.js'
 import OlStyle from 'ol/style/Style.js'
 import OlIcon from 'ol/style/Icon.js'
-
+import Overlay from 'ol/Overlay';
+import {toLonLat, transform} from 'ol/proj.js'
+import {defaults} from 'ol/control.js'
+import { process } from '@/common/Api.js'
 const EPSG_3857 = 'EPSG:3857';
-
-
+const EPSG_4326 = 'EPSG:4326';
 export default {
-name: 'MainMap',
-data() {
-  return {
-    olMap: undefined,
-  }
-},
-mounted() {
-  const vectorSource = new OlVectorSource(EPSG_3857);
-  const vectorLayer = new OlVectorLayer({
-      source: vectorSource
-  })
-  this.olMap = new OlMap({
-    target: this.$refs.map,
-    controls: defaults({
-        attribution: false,
-        zoom: false,
-        rotate: false,
-    }),
-    layers: [
-        new OlLayerTile({
-            source: new OSM()
-        }),
-        vectorLayer
-    ],
-    view: new OlView({
-        center: fromLonLat([127.1388684, 37.4449168]), // 경기도 성남
-        zoom: 10,
-        projection: EPSG_3857 // 생략 가능
-    })
-  })
-  const that = this
-  this.olMap.on('click', async (e) => {
-    await addUiAddress();
-    drawMapIcon();
-
-    async function addUiAddress() {
-        const lonLatArr = toLonLat(e.coordinate)
-        const lon = lonLatArr[0]
-        const lat = lonLatArr[1]
-        const addressInfo = await that.getAddress(lon, lat)
-        that.setUiAddress(addressInfo.data.display_name);
-        that.setLonLat(lon, lat);
-    }
-
-    function drawMapIcon() {
-        vectorSource.clear();
-        geocoder.getSource().clear();
-        const feature = new OlFeature({
-            geometry: new OlPoint(e.coordinate)
-        })
-        feature.setStyle(new OlStyle({
-            image: new OlIcon({
-                scale: 0.7,
-                src: '//cdn.rawgit.com/jonataswalker/map-utils/master/images/marker.png'
-            })
-        }))
-        vectorSource.addFeature(feature);    
-    }
-  })  
-  const geocoder = new Geocoder('nominatim', {
-      provider: 'osm',
-      lang: 'kr',
-      placeholder: '주소 검색',
-      limit: 5, // 자동 완성 결과 최대 개수
-      autoComplete: true,
-      keepOpen: true
-    });
-    this.olMap.addControl(geocoder);
-
-    geocoder.on('addresschosen', (evt) => {
-      that.setUiAddress(evt.address.details.name);
-})  
-},
-  methods: {
-    getAddress (lon, lat) {
-      return axios.get(
-          'https://nominatim.openstreetmap.org/reverse',
-          {
-            params: {
-              format: 'json',
-              lon: lon,
-              lat: lat
-            }
+  name: 'MainMap',
+  data() {
+      return {
+          isShowOverlay: false,
+          olMap: undefined,
+          address: undefined,
+          selectedOverlayText: undefined,
+          selectedOverlayRating: undefined,
+          overlay: undefined,
+          vectorSource: undefined,
+          iconsSource: undefined
+      }
+  },
+  computed: {
+      reviews() {
+          return this.$store.state.reviews;
+      },
+      isDisabledInput() {
+          return this.$store.state.isDisabledInput;
+      }
+  },
+  watch: {
+      async reviews() {
+          if (this.vectorSource)
+              this.vectorSource.clear();
+          this.drawFeatures();
+      }
+  },
+  async mounted() {
+      const that = this;
+      this.vectorSource = new OlVectorSource(EPSG_3857);
+      const vectorLayer = new OlVectorLayer({
+          source: this.vectorSource
+      });
+      this.olMap = new OlMap({
+          target: this.$refs.map,
+          controls: defaults({
+              attribution: false,
+              zoom: false,
+              rotate: false,
+          }),
+          layers: [
+              new OlLayerTile({
+                  source: new OSM()
+              }),
+              vectorLayer
+          ],
+          view: new OlView({
+              center: this.coordi4326To3857([127.1388684, 37.4449168]), // 경기도 성남
+              zoom: 10,
+              projection: EPSG_3857
           })
-    },
-    setUiAddress(str) {
-      this.$root.$refs.sideBar.address = str.split(', ').reverse().join(' ');
-   },
-    setLonLat(lon, lat) {
-      this.$root.$refs.sideBar.lon = lon;
-      this.$root.$refs.sideBar.lat = lat;
-   },
+      })
+      await this.$store.dispatch('setReviews');
+      this.drawFeatures();
+      this.olMap.on('pointermove', (e) => {
+          that.olMap.getTargetElement().style.cursor = '';
+          that.isShowOverlay = false;
+          that.olMap.removeOverlay(that.overlay);
+          that.olMap.forEachFeatureAtPixel(e.pixel, feature => {
+              if (feature.getGeometry().getType() === 'Point' &&
+                  feature.get('title') !== undefined) {
+                  that.isShowOverlay = true;
+                  that.selectedOverlayText = feature.get('title');
+                  that.selectedOverlayRating = feature.get('grade');
+                  const overlay = that.$refs.overlay;
+                  that.overlay = new Overlay({
+                      element: overlay,
+                      position: feature.getGeometry().getCoordinates(),
+                      positioning: 'bottom-center',
+                      stopEvent: false,
+                      offset: [0, -10]
+                  })
+                  that.olMap.addOverlay(that.overlay);
+                  that.olMap.getTargetElement().style.cursor = 'pointer';
+              }
+          })
+      })
+      this.olMap.on('click', async (e) => {
+          this.vectorSource.clear();
+          geocoder.getSource().clear();
+          const [lon, lat] = toLonLat(e.coordinate)
+          const addressInfo = await that.getAddress(lon, lat)
+          this.$store.commit('setReview', undefined);
+          this.$store.commit('setInputState', false);
+          this.$store.commit('setCurAddress', that.getUiAddress(addressInfo.data.display_name));
+          that.$store.commit('setLonLat', {lon, lat});
+          const point = that.coordi4326To3857([lon, lat]);
+          const feature = new OlFeature({
+              geometry: new OlPoint(point)
+          })
+          feature.setStyle(new OlStyle({
+              image: new OlIcon({
+                  scale: 0.7,
+                  src: '//cdn.rawgit.com/jonataswalker/map-utils/master/images/marker.png'
+              })
+          }))
+          const hit = that.olMap.forEachFeatureAtPixel(e.pixel, feature => {
+              this.$store.commit('setCurTitle', feature.get('title'));
+              this.$store.commit('setCurAddress', feature.get('address'));
+              this.$store.commit('setCurGrade', feature.get('grade'));
+              this.$store.commit('setCurReview', feature.get('review'));
+              this.$store.commit('setCurReviewId', feature.get('reviewId'));
+              this.$store.commit('setInputState', true);
+              return true;
+          })
+          if (!hit)
+              this.vectorSource.addFeature(feature);
+      })
+      const geocoder = new Geocoder('nominatim', {
+          provider: 'osm',
+          lang: 'kr',
+          placeholder: '주소 검색',
+          limit: 5, // 자동 완성 결과 최대 개수
+          autoComplete: true,
+          keepOpen: true
+      });
+      this.olMap.addControl(geocoder);
+      geocoder.on('addresschosen', (evt) => {
+          this.vectorSource.clear();
+          that.$store.commit('setCurAddress', that.getUiAddress(evt.address.details.name));
+      });
+  },
+  methods: {
+      drawFeatures() {
+          if (this.iconsSource)
+              this.iconsSource.clear();
+          this.iconsSource = new OlVectorSource(EPSG_3857);
+          const iconsLayer = new OlVectorLayer({
+              source: this.iconsSource
+          });
+          const style = new OlStyle({
+              image: new OlIcon({
+                  scale: 0.1,
+                  src: require('../assets/spot.png')
+              })
+          });
+          const features = this.reviews.map(review => {
+              const point = this.coordi4326To3857([review.lon, review.lat]);
+              const feature = new OlFeature({
+                  geometry: new OlPoint(point)
+              });
+              feature.set('title', review.title);
+              feature.set('grade', review.grade);
+              feature.set('address', review.address);
+              feature.set('review', review.review);
+              feature.set('reviewId', review.id);
+              feature.setStyle(style);
+              return feature;
+          })
+          this.iconsSource.addFeatures(features);
+          this.olMap.addLayer(iconsLayer);
+      },
+      async getReviews() {
+          return await process(this, async () => {
+          })
+      },
+      coordi4326To3857(coord) {
+          return transform(coord, EPSG_4326, EPSG_3857);
+      },
+      getUiAddress(str) {
+          return str.split(', ').reverse().join(' ');
+      },
+      getAddress(lon, lat) {
+          return axios.get(
+              'https://nominatim.openstreetmap.org/reverse',
+              {
+                  params: {
+                      format: 'json',
+                      lon: lon,
+                      lat: lat
+                  }
+              })
+      }
   }
 }
 </script>
 
 <style lang="scss" scoped>
 .main-map {
-width: 100%;
-height: 100%;
-::v-deep .ol-geocoder {
-    position: absolute;
-    right: 0;
-    padding: 10px;
-
-    button {
-      display: none;
-    }
-
-    input::placeholder {
-      color: white;
-      opacity: 0.7;
-    }
-
-    input, ul {
-      border-style: none;
-      width: 200px;
-      background-color: rgba(0, 0, 0, 0.5);
+  width: 100%;
+  height: 100%;
+  .overlay-tooltip {
       border-radius: 5px;
-      border-color: unset;
-      padding: 0 5px;
+      background-color: rgba(0, 0, 0, 0.5);
+      padding: 5px 10px;
       color: white;
-    }
-
-    ul {
-      margin-top: 5px;
-      padding: 0;
-      list-style: none;
-
-      li:hover {
-        background-color: rgba(0, 0, 0, 0.3);
+      text-align: center;
+      > .overlay-content::after {
+          content: "";
+          position: absolute;
+          top: 100%;
+          left: 50%;
+          margin-left: -5px;
+          border-width: 5px;
+          border-style: solid;
+          border-color: rgba(0, 0, 0, 0.5) transparent transparent transparent;
       }
-
-      li {
-        padding: 5px 10px;
-        font-size: 13px;
-
-        a {
-          text-decoration: none;
-
-          .gcd-road {
-            color: white;
+       ::v-deep.rating {
+          font-size: 15px;
+          background-color: transparent;
+          border: none;
+          padding: 0;
+          margin: 0;
+          color: #ffdd00;
+          height: unset;
+      }
+  }
+  ::v-deep .ol-geocoder {
+      position: absolute;
+      right: 0;
+      padding: 10px;
+      button {
+          display: none;
+      }
+      input::placeholder {
+          color: white;
+          opacity: 0.7;
+      }
+      input, ul {
+          border-style: none;
+          width: 200px;
+          background-color: rgba(0, 0, 0, 0.5);
+          border-radius: 5px;
+          border-color: unset;
+          padding: 0 5px;
+          color: white;
+      }
+      ul {
+          margin-top: 5px;
+          padding: 0;
+          list-style: none;
+          li:hover {
+              background-color: rgba(0, 0, 0, 0.3);
           }
-        }
+          li {
+              padding: 5px 10px;
+              font-size: 13px;
+              a {
+                  text-decoration: none;
+                  .gcd-road {
+                      color: white;
+                  }
+              }
+          }
       }
-    }
   }
 }
-
 </style>

@@ -52,6 +52,9 @@
 import VueResizable from 'vue-resizable';
 import axios from 'axios';
 import ProgressSpinner from '@/components/ProgressSpinner.vue'
+import { process } from '@/common/Api.js';
+import { ok } from '@/common/Dialog.js';
+import { mapState } from 'vuex'
 
 export default {
   name: 'SideBar',
@@ -61,60 +64,76 @@ export default {
   },
   data() {
     return {
-      isVisibleSideBar: true,
-      title: undefined,
-      address: undefined,
-      grade: undefined,
-      review: undefined,
-      lon: undefined,
-      lat: undefined,
+      isVisibleSideBar: true,   
+      
       processingCount: 0,
+    }
+  },
+  computed: {
+    ...mapState({
+        reviewId: state => state.curReviewId,
+        curAddress: state => state.curAddress,
+        curGrade: state => state.curGrade,
+        curReview: state => state.curReview,
+        curTitle: state => state.curTitle
+    }),
+    address: {
+        get() {
+            return this.curAddress;            
+        },
+        set(newVal) {          
+            this.$store.commit('setCurAddress', newVal);
+        }
+    },
+    grade: {
+        get() {
+            return this.curGrade
+        },
+        set(newVal) {
+            this.$store.commit('setCurGrade', newVal);
+        }
+    },
+    review: {
+        get() {
+            return this.curReview
+        },
+        set(newVal) {
+            this.$store.commit('setCurReview', newVal);
+        }
+    },
+    title: {
+        get() {
+            return this.curTitle
+        },
+        set(newVal) {
+            this.$store.commit('setCurTitle', newVal);
+        }
     }
   },
   created() {
     this.$root.$refs.sideBar = this;
   },
   methods: {
+    async getReviews() {
+      return await process(this, async () => {
+        return await axios.get('/api/review/getReviews');
+      })
+    },
     showSideBar() {
       this.isVisibleSideBar = !this.isVisibleSideBar;
     },
-    async saveReview () {
-      this.processingCount++;
-      try {
-          await axios.post('/api/review/saveReview', {
-              title: this.title,
-              address: this.address,
-              grade: this.grade,
-              review: this.review,
-              lon : this.lon,
-              lat : this.lat,
-          });
-          await this.$bvModal.msgBoxOk('저장 완료되었습니다.', {
-              hideHeader: true,
-              okTitle: '확인',
-              noFade: false,
-              size: 'sm',
-              buttonSize: 'sm',
-              okVariant: 'success',
-              headerClass: 'p-2 border-bottom-0',
-              footerClass: 'p-2 border-top-0',
-          });
-      } catch (e) {
-          console.log(e.message);
-          await this.$bvModal.msgBoxOk(e.message, {
-              hideHeader: true,
-              okTitle: '확인',
-              noFade: false,
-              size: 'sm',
-              buttonSize: 'sm',
-              okVariant: 'danger',
-              headerClass: 'p-2 border-bottom-0',
-              footerClass: 'p-2 border-top-0',
-          });
-          return await Promise.reject(e);
-      } finally {
-          this.processingCount--;
-      }
+    saveReview () {
+      process(this, async () => {
+        await axios.post('/api/review/saveReview', {
+            title: this.title,
+            address: this.address,
+            grade: this.grade,
+            review: this.review,            
+            lon: this.$store.state.curLon, // 추가
+            lat: this.$store.state.curLat // 추가
+        });
+        await ok(this, '저장 완료되었습니다.');
+      })
     }
   }
 }
